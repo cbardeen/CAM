@@ -13,6 +13,7 @@
       use mpishorthand,     only : mpicom,mpiint,mpir8, mpilog, mpir4
 #endif
       use spmd_utils,       only : masterproc
+      use radxfr_cam,       only : do_tuv_photo
 
       implicit none
 
@@ -67,6 +68,8 @@
       real(r4), allocatable :: rsf_tab(:,:,:,:,:)
       logical :: jlong_used = .false.
 
+      integer :: begw=-1, endw=-1
+
       contains
 
       subroutine jlong_init( xs_long_file, rsf_file, lng_indexer )
@@ -74,6 +77,7 @@
       use ppgrid,         only : pver
       use mo_util,        only : rebin
       use solar_irrad_data,only : data_nw => nbins, data_we => we, data_etf => sol_etf
+      use wavelength_grid, only : wgrid_wc=>wc, wgrid_nw=>nwave
 
       implicit none
 
@@ -82,6 +86,8 @@
 !------------------------------------------------------------------------------
       integer, intent(inout)       :: lng_indexer(:)
       character(len=*), intent(in) :: xs_long_file, rsf_file
+
+      integer :: w
 
 !------------------------------------------------------------------------------
 !     ... read Cross Section * QY NetCDF file
@@ -102,6 +108,11 @@
 
       if (masterproc) then
          write(iulog,*) ' '
+         write(iulog,*) '============================================'
+         write(iulog,*) 'jlong_init: finished get_rsf'
+         write(iulog,*) 'jlong_init: numj, nw = ',numj,nw
+         write(iulog,*) 'jlong_init: wc'
+         write(iulog,*) wc(:)
          write(iulog,*) '--------------------------------------------------'
       endif
       call rebin( data_nw, nw, data_we, we, data_etf, etfphot )
@@ -114,6 +125,14 @@
 
       jlong_used = .true.
  
+      find_begw: do w=1,wgrid_nw
+         if (wgrid_wc(w) >= 200._r8 ) then
+            begw = w
+            exit find_begw
+         end if
+      end do find_begw
+      endw = wgrid_nw
+
       end subroutine jlong_init
 
       subroutine get_xsqy( xs_long_file, lng_indexer )
@@ -512,7 +531,7 @@
 
       subroutine jlong_hrates( nlev, sza_in, alb_in, p_in, t_in, &
                                mw, o2_vmr, o3_vmr, colo3_in, qrl_col, &
-                               cparg, kbot )
+                               cparg, kbot, actflx )
 !==============================================================================
 !   Purpose:                                                                   
 !     To calculate the thermal heating rates longward of 200nm.        
@@ -534,6 +553,8 @@
 	use physconst,       only : avogad
         use error_messages, only : alloc_err
 
+        use infnan, only : nan, assignment(=)
+
 	implicit none
 
 !------------------------------------------------------------------------------
@@ -551,6 +572,8 @@
       real(r8), intent(in)     :: mw(nlev)           ! atms molecular weight
       real(r8), intent(in)     :: cparg(nlev)        ! specific heat capacity
       real(r8), intent(inout)  :: qrl_col(:,:)	     ! heating rates
+      real(r8), intent(in)     :: actflx(:,:)        ! (nwave, pver)
+
 
 !----------------------------------------------------------------------
 !  	... local variables
@@ -578,10 +601,18 @@
          call alloc_err( astat, 'jlong_hrates', 'xswk,wrk', 3*nw )
       end if
 
+      rsf(:,:) = nan
+
 !----------------------------------------------------------------------
 !        ... interpolate table rsf to model variables
 !----------------------------------------------------------------------
-      call interpolate_rsf( alb_in, sza_in, p_in, colo3_in, kbot, rsf )
+      if (do_tuv_photo) then
+        do k = 1,kbot
+           rsf(:nw,k) = etfphot(:) * wlintv(:) * actflx(begw:endw,nlev-k+1) 
+        end do
+      else
+        call interpolate_rsf( alb_in, sza_in, p_in, colo3_in, kbot, rsf )
+      end if
 
 !------------------------------------------------------------------------------
 !     ... calculate thermal heating rates for wavelengths >200nm
@@ -642,7 +673,7 @@ level_loop_1 : &
       end subroutine jlong_hrates
 
        subroutine jlong_photo( nlev, sza_in, alb_in, p_in, t_in, &
-                              colo3_in, j_long )
+                              colo3_in, j_long, actflx )
 !==============================================================================
 !   Purpose:                                                                   
 !     To calculate the total J for selective species longward of 200nm.        
@@ -675,7 +706,9 @@ level_loop_1 : &
       real(r8), intent(in)     :: p_in(nlev)         ! midpoint pressure (hPa)
       real(r8), intent(in)     :: t_in(nlev)         ! Temperature profile (K)
       real(r8), intent(in)     :: colo3_in(nlev)     ! o3 column density (molecules/cm^3)
-      real(r8), intent(out)    :: j_long(:,:)	     ! photo rates (1/s)
+      real(r8), intent(out)    :: j_long(:,:)	       ! photo rates (1/s)
+
+      real(r8), intent(in)     :: actflx(:,:)        ! (nwave, pver)
 
 !----------------------------------------------------------------------
 !  	... local variables
@@ -706,7 +739,14 @@ level_loop_1 : &
 !----------------------------------------------------------------------
 !        ... interpolate table rsf to model variables
 !----------------------------------------------------------------------
-      call interpolate_rsf( alb_in, sza_in, p_in, colo3_in, nlev, rsf )
+      if (do_tuv_photo) then
+        do k = 1,nlev
+           rsf(:nw,k) = etfphot(:) * wlintv(:) * actflx(begw:endw,nlev-k+1) 
+        end do
+      else
+        call interpolate_rsf( alb_in, sza_in, p_in, colo3_in, nlev, rsf )
+      end if
+
 
 !------------------------------------------------------------------------------
 !     ... calculate total Jlong for wavelengths >200nm

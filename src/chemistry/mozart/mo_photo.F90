@@ -594,6 +594,7 @@ contains
     use photo_bkgrnd, only : photo_bkgrnd_calc
     use cam_history, only : outfld
     use infnan,      only : nan, assignment(=)
+    use radxfr_cam,  only : actinic_fluxes
 
     implicit none
 
@@ -834,7 +835,7 @@ contains
              !	... short wave length component
              !-----------------------------------------------------------------
              call jshort( n_jshrt_levs, sza, n2_den, o2_den, o3_den, &
-                  no_den, tline, zarg, jo2_sht, jno_sht, sht_prates )  
+                  no_den, tline, zarg, jo2_sht, jno_sht, sht_prates, actinic_fluxes(:,:,i,lchnk) )
 
              do m = 1,phtcnt
                 if( sht_indexer(m) > 0 ) then
@@ -869,12 +870,16 @@ contains
           !-----------------------------------------------------------------
           call cloud_mod( zen_angle(i), cld_line, lwc_line, fac1, srf_alb(i), &
                           eff_alb, cld_mult )
+! CGB - The cloud multipler has already been included in TUV, so don't include
+! that factor again.
+! NOTE: Swithced it so now is off in TUV and on here.
           cld_mult(:) = esfact * cld_mult(:)
+!          cld_mult(:) = esfact
 
           !-----------------------------------------------------------------
           !	... long wave length component
           !-----------------------------------------------------------------
-          call jlong( pver, sza, eff_alb, parg, tline, colo3, lng_prates )          
+          call jlong( pver, sza, eff_alb, parg, tline, colo3, lng_prates, actinic_fluxes(:,:,i,lchnk) )          
           do m = 1,phtcnt
              if( lng_indexer(m) > 0 ) then
                 alias_factor = pht_alias_mult(m,2)

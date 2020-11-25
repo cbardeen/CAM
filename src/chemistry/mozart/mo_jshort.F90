@@ -13,6 +13,7 @@
       use spmd_utils,        only : masterproc
       use ppgrid,            only : pver
       use phys_control,      only : waccmx_is
+      use radxfr_cam,        only : do_tuv_photo
 
       implicit none
 
@@ -509,7 +510,7 @@
 
       subroutine jshort_hrates( nlev, zen, o2_vmr, o3_vmr, o2cc, &
                                 o3cc, tlev, zkm, mw, qrs, cparg, &
-                                lchnk, long, co2cc, scco2, do_diag )
+                                lchnk, long, co2cc, scco2, do_diag, actflx )
 !==============================================================================!
 !   Subroutine Jshort                                                          !
 !==============================================================================!
@@ -583,6 +584,7 @@
        real(r8), intent(inout) :: qrs(:,:)             ! sw heating rates
        real(r8), intent(out)   :: scco2(nlev)          ! co2 column concentration (molec/cm^2)
        logical,  intent(in)    :: do_diag
+       real(r8), intent(in)    :: actflx(:,:)          ! (nwave, pver)
 
 !------------------------------------------------------------------------------
 !     ... local variables
@@ -719,7 +721,11 @@
 !         corrected for O2 and O3 absorption
 !------------------------------------------------------------------------------
       do wn = 1,nw                                  ! nw = 33 (nsrb_tot+nsrc_tot)
-         fnorm(:,wn) = etfphot(wn)*trans_o2(:,wn)*trans_o3(:,wn)
+        if (do_tuv_photo) then
+          fnorm(:,wn) = etfphot(wn)*actflx(wn,:)
+        else
+          fnorm(:,wn) = etfphot(wn)*trans_o2(:,wn)*trans_o3(:,wn)
+        end if
       end do
 
 !------------------------------------------------------------------------------
@@ -830,7 +836,7 @@
       end subroutine jshort_hrates
 
       subroutine jshort_photo( nlev, zen, n2cc, o2cc, o3cc, &
-                               nocc, tlev, zkm, jo2_sht, jno_sht, jsht )
+                               nocc, tlev, zkm, jo2_sht, jno_sht, jsht, actflx )
 !==============================================================================!
 !   Subroutine Jshort                                                          !
 !                                                                              !
@@ -907,6 +913,7 @@
 	real(r8), intent(out)   :: jo2_sht(nlev,branch) ! JO2, sec-1, <200nm
 	real(r8), intent(out)   :: jno_sht(nlev)        ! JNO, sec-1, SRB
 	real(r8), intent(out)   :: jsht(:,:)	        ! Additional J's
+  real(r8), intent(in)    :: actflx(:,:) ! (nwave, pver)
 
 !------------------------------------------------------------------------------
 !     ... local variables
@@ -1045,7 +1052,11 @@
 !         corrected for O2 and O3 absorption
 !------------------------------------------------------------------------------
       do wn = 1,nw                               ! nw = 33 (nsrb_tot+nsrc_tot)
-         fnorm(:,wn) = etfphot(wn)*trans_o2(:,wn)*trans_o3(:,wn)
+        if (do_tuv_photo) then
+          fnorm(:,wn) = etfphot(wn)*actflx(wn,:)
+        else
+          fnorm(:,wn) = etfphot(wn)*trans_o2(:,wn)*trans_o3(:,wn)
+        end if
       end do
 
 !------------------------------------------------------------------------------

@@ -23,6 +23,7 @@ module mo_gas_phase_chemdr
 
   integer :: synoz_ndx, so4_ndx, h2o_ndx, o2_ndx, o_ndx, hno3_ndx, hcl_ndx, dst_ndx, cldice_ndx, snow_ndx
   integer :: o3_ndx, o3s_ndx
+  integer :: so2_ndx, no2_ndx, no_ndx
   integer :: het1_ndx
   integer :: ndx_cldfr, ndx_cmfdqr, ndx_nevapr, ndx_cldtop, ndx_prain
   integer :: ndx_h2so4
@@ -60,6 +61,7 @@ contains
     use physics_buffer,    only : pbuf_get_index
     use rate_diags,        only : rate_diags_init
     use cam_abortutils,    only : endrun
+    use radxfr_cam,        only : radxfr_cam_init
 
     implicit none
 
@@ -121,6 +123,9 @@ contains
     o3s_ndx = get_spc_ndx('O3S')
     o_ndx   = get_spc_ndx('O')
     o2_ndx  = get_spc_ndx('O2')
+    so2_ndx = get_spc_ndx('SO2')
+    no2_ndx = get_spc_ndx('NO2')
+    no_ndx  = get_spc_ndx('NO')
     so4_ndx = get_spc_ndx('SO4')
     h2o_ndx = get_spc_ndx('H2O')
     hno3_ndx = get_spc_ndx('HNO3')
@@ -234,6 +239,8 @@ contains
 
     call chem_prod_loss_diags_init
 
+    call radxfr_cam_init
+
   end subroutine gas_phase_chemdr_inti
 
 
@@ -311,6 +318,8 @@ contains
     use aero_model,        only : aero_model_gasaerexch
 
     use aero_model,        only : aero_model_strat_surfarea
+    use cam_abortutils,    only : endrun
+    use radxfr_cam,        only : radxfr_cam_update
 
     implicit none
 
@@ -370,6 +379,10 @@ contains
     real(r8),       pointer    :: cmfdqr(:,:)
     real(r8),       pointer    :: cldfr(:,:)
     real(r8),       pointer    :: cldtop(:)
+
+    ! CGB - Currently do not use cloud processing in TUV.
+    real(r8)                   :: tmp_cldw(pcols,pver)               ! cloud water (kg/kg)
+    real(r8)                   :: tmp_cldfr(pcols,pver)               ! cloudfraction
 
     integer      ::  i, k, m, n
     integer      ::  tim_ndx
@@ -449,6 +462,7 @@ contains
   ! for aerosol formation....  
     real(r8) :: del_h2so4_gasprod(ncol,pver)
     real(r8) :: vmr0(ncol,pver,gas_pcnst)
+    real(r8) :: so24rad(ncol,pver)                            ! so2 for radxfr (vmr)
 
 !
 ! CCMI
@@ -838,6 +852,27 @@ contains
        call outfld('FRACDAY', fracday(:ncol), ncol, lchnk )
 
     else
+       if (o2_ndx>0 .and. o3_ndx>0 .and. no2_ndx>0 .and. no_ndx>0) then
+
+          ! If the mechanism doesn't contain sulfur, then just zero out the
+          ! SO2 column.
+          if (so2_ndx>0) then
+             so24rad(:,:) = vmr(:,:,so2_ndx)
+          else
+             so24rad(:,:) = 0._r8
+          end if
+
+          ! CGB - Clouds are done outside of TUV, so zero out these cloud fields so
+          ! TUV doesn't also calculate a cloud effect. This might change in the future.
+          tmp_cldfr = 0._r8
+          tmp_cldw  = 0._r8
+          call radxfr_cam_update( ncol, lchnk, esfact, sza, asdir, pmid, zmid, tfld, &
+               vmr(:,:,o2_ndx), vmr(:,:,o3_ndx), so24rad(:,:), vmr(:,:,no2_ndx), vmr(:,:,no_ndx), &
+               tmp_cldfr, tmp_cldw, pbuf )
+       else
+          call endrun('gas_phase_chemdr: must include O2, O3, NO2, and NO')
+       end if
+
        !-----------------------------------------------------------------
        !	... lookup the photolysis rates from table
        !-----------------------------------------------------------------

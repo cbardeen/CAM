@@ -21,6 +21,7 @@ module chemistry
   use mo_apex,          only : mo_apex_readnl
   use ref_pres,         only : do_molec_diff, ptop_ref
   use phys_control,     only : waccmx_is   ! WACCM-X switch query function
+  use radxfr_cam,       only: radxfr_cam_readnl
 
   implicit none
   private
@@ -675,6 +676,7 @@ end function chem_is
    call noy_ubc_readnl(nlfile)
    call sulf_readnl(nlfile)
    call species_sums_readnl(nlfile)
+   call radxfr_cam_readnl(nlfile)
 
   endsubroutine chem_readnl
 
